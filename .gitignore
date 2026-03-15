@@ -1,0 +1,28 @@
+# ── Secrets ───────────────────────────────────────────────────
+.env
+
+# ── Data & model artefacts ────────────────────────────────────
+data/
+*.parquet
+*.pkl
+*.joblib
+
+# ── Python ────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Notebooks ─────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── OS / editor ───────────────────────────────────────────────
+.DS_Store
+.vscode/
+*.swp
