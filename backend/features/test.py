@@ -2,6 +2,7 @@
 Test suite for technical indicator features.
 """
 import pandas as pd
+import pandas_ta as ta
 import numpy as np
 import yfinance as yf
 from indicators import add_all_indicators
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     print(f"✅ Features added: {len(df.columns) - 6}")  # -6 for original OHLCV
     print(f"\n📊 Last 5 rows of indicator data:")
     print(df[[
-        "close", "sma_20", "rsi_14", "atr_14", "bb_position"
+        "close", "sma_20", "rsi_14", "macd_line", "macd_histogram"
     ]].tail(5).to_string())
 
     # Test 3: Verification — compare pandas_ta RSI with scratch RSI
@@ -58,7 +59,46 @@ if __name__ == "__main__":
     # Test 4: Feature statistics
     print("\n=== Test 4: Feature statistics ===")
     indicators = [
-        "sma_20", "rsi_14", "atr_14", "bb_position",
-        "volatility_20d", "roc_10", "rsi_momentum"
+        "sma_20", "rsi_14", "roc_10", "rsi_momentum",
+        "macd_line", "macd_histogram"
     ]
-    print(df[indicators].describe().round(3).to_string()) 
+    print(df[indicators].describe().round(3).to_string())
+
+    # Test 5: MACD feature columns
+    # Standard MACD (12, 26, 9)
+    print("\n=== Test 5: MACD feature columns ===")
+    macd_data = ta.macd(df['close'], fast=12, slow=26, signal=9)
+    print(macd_data.columns)
+    # ['MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9']
+    #   ↑ MACD line      ↑ Histogram       ↑ Signal line
+
+    # Add to DataFrame
+    df['macd_line']      = macd_data['MACD_12_26_9']
+    df['macd_signal']    = macd_data['MACDs_12_26_9']
+    df['macd_histogram'] = macd_data['MACDh_12_26_9']
+    print(df[["close", "macd_line", "macd_signal", "macd_histogram"]].tail(10).to_string())
+    
+
+    # Reading the output:
+    # macd_line positive  → short term trend bullish
+    # macd_line > signal  → momentum accelerating
+    # histogram growing   → momentum strengthening
+    # histogram shrinking → momentum fading (watch for reversal)
+    
+    
+    
+# Simply put: Volatility measures how wildly a stock's price swings up and down over time.
+
+# Everyday Analogy
+# Think of two cars on a road:
+
+# Low volatility = smooth highway, steady speed, predictable
+# High volatility = mountain road with sharp turns, speed changes constantly, unpredictable
+
+
+# What it looks like in practice
+# Stock A (Low Volatility - e.g. Coca-Cola):
+# $100 → $101 → $100 → $102 → $101   (small, calm moves)
+
+# Stock B (High Volatility - e.g. a crypto or small tech stock):
+# $100 → $120 → $85 → $130 → $90    (big, wild swings)
