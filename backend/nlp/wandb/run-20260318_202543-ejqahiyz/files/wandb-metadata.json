@@ -1,0 +1,37 @@
+{
+  "os": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "python": "CPython 3.13.7",
+  "startedAt": "2026-03-18T14:55:43.647756Z",
+  "program": "/Users/kritgunsingh0719gmail.com/Downloads/projects /stocksense-ai/backend/nlp/fine_tune.py",
+  "codePath": "backend/nlp/fine_tune.py",
+  "codePathLocal": "fine_tune.py",
+  "git": {
+    "remote": "https://github.com/Kritgun1907/stocksense-ai.git",
+    "commit": "1a0b008faf2a1797897ccf0147509dfc5d2fed5e"
+  },
+  "email": "kritgunsingh.bt24ece@pec.edu.in",
+  "root": "/Users/kritgunsingh0719gmail.com/Downloads/projects /stocksense-ai/backend/nlp",
+  "host": "Kritguns-MacBook-Air.local",
+  "executable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+  "cpu_count": 10,
+  "cpu_count_logical": 10,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "231985541120"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {
+    "name": "Apple M4",
+    "ecpuCores": 6,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 16,
+    "swapTotalBytes": "25769803776",
+    "ramTotalBytes": "17179869184"
+  },
+  "writerId": "mswvxwlo2empiwuhg12y4ckyehrlg9u6"
+}

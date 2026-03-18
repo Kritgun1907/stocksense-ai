@@ -1,0 +1,178 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            mswvxwlo2empiwuhg12y4ckyehrlg9u6:
+                apple:
+                    ecpuCores: 6
+                    gpuCores: 8
+                    memoryGb: 16
+                    name: Apple M4
+                    pcpuCores: 4
+                    ramTotalBytes: "17179869184"
+                    swapTotalBytes: "25769803776"
+                codePath: backend/nlp/fine_tune.py
+                codePathLocal: fine_tune.py
+                cpu_count: 10
+                cpu_count_logical: 10
+                disk:
+                    /:
+                        total: "245107195904"
+                        used: "231985541120"
+                email: kritgunsingh.bt24ece@pec.edu.in
+                executable: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+                git:
+                    commit: 1a0b008faf2a1797897ccf0147509dfc5d2fed5e
+                    remote: https://github.com/Kritgun1907/stocksense-ai.git
+                host: Kritguns-MacBook-Air.local
+                memory:
+                    total: "17179869184"
+                os: macOS-26.2-arm64-arm-64bit-Mach-O
+                program: /Users/kritgunsingh0719gmail.com/Downloads/projects /stocksense-ai/backend/nlp/fine_tune.py
+                python: CPython 3.13.7
+                root: /Users/kritgunsingh0719gmail.com/Downloads/projects /stocksense-ai/backend/nlp
+                startedAt: "2026-03-18T14:55:43.647756Z"
+                writerId: mswvxwlo2empiwuhg12y4ckyehrlg9u6
+        m: []
+        python_version: 3.13.7
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 53
+            "2":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 53
+            "3":
+                - 13
+                - 16
+                - 61
+            "4": 3.13.7
+            "5": 0.25.1
+            "6": 5.3.0
+            "12": 0.25.1
+            "13": darwin-arm64
+base_model_id:
+    value: ProsusAI/finbert
+batch_size:
+    value: 16
+checkpoint_dir:
+    value: nlp/finbert_checkpoints
+early_stop_patience:
+    value: 3
+hf_repo_name:
+    value: stocksense-finbert
+id2label:
+    value:
+        "0": positive
+        "1": negative
+        "2": neutral
+label2id:
+    value:
+        negative: 1
+        neutral: 2
+        positive: 0
+learning_rate:
+    value: 2e-05
+log_dir:
+    value: nlp/logs
+log_every_n_steps:
+    value: 20
+max_grad_norm:
+    value: 1
+max_text_length:
+    value: 512
+min_text_length:
+    value: 15
+newsapi_queries:
+    value:
+        - stock earnings results
+        - company revenue guidance
+        - quarterly profits analyst
+        - stock market financial results
+        - corporate earnings beat miss
+        - dividend acquisition merger
+        - stock downgrade upgrade analyst
+        - revenue declined below expectations
+        - earnings exceeded forecasts
+num_epochs:
+    value: 10
+num_labels:
+    value: 3
+output_dir:
+    value: nlp/finbert_finetuned
+push_to_hub:
+    value: true
+target_headlines:
+    value: 1200
+test_split:
+    value: 0.15
+tickers:
+    value:
+        - AAPL
+        - MSFT
+        - GOOGL
+        - AMZN
+        - META
+        - NVDA
+        - TSLA
+        - AMD
+        - INTC
+        - CRM
+        - ORCL
+        - ADBE
+        - NFLX
+        - PYPL
+        - UBER
+        - JPM
+        - BAC
+        - GS
+        - MS
+        - WFC
+        - C
+        - BLK
+        - AXP
+        - JNJ
+        - PFE
+        - UNH
+        - ABBV
+        - MRK
+        - LLY
+        - BMY
+        - XOM
+        - CVX
+        - COP
+        - SLB
+        - EOG
+        - WMT
+        - TGT
+        - COST
+        - MCD
+        - SBUX
+        - NKE
+        - PG
+        - KO
+        - PEP
+        - BA
+        - CAT
+        - GE
+        - HON
+        - MMM
+        - UPS
+        - FDX
+        - SPY
+        - QQQ
+        - DIA
+val_split:
+    value: 0.1
+wandb_project:
+    value: stocksense-finbert
+warmup_ratio:
+    value: 0.06
+weight_decay:
+    value: 0.01
