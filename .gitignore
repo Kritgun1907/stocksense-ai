@@ -7,6 +7,14 @@ data/
 *.pkl
 *.joblib
 
+# ── Large model weights (>100MB — use HuggingFace Hub or Git LFS instead) ───
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+backend/nlp/finbert_finetuned/model.safetensors
+backend/nlp/finbert_checkpoints/
+
 # ── Python ────────────────────────────────────────────────────
 .venv/
 venv/
