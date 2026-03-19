@@ -8,15 +8,16 @@ This file owns ALL orchestration logic:
   - In what order they run
   - Why each step is where it is
 
-indicators.py contains ONLY the feature calculation logic.
+indicators.py contains ONLY the price/candle feature calculation logic.
+nlp/rolling.py contains ONLY the rolling sentiment feature logic.
 This file is the only place that decides the call sequence.
 
 Usage
 ─────
     from features.engineer import build_features, get_feature_columns
 
-    df = build_features(raw_ohlcv_df)          # full pipeline
-    feature_cols = get_feature_columns(df)      # cols to feed the model
+    df = build_features(merged_df)         # merged_df = price + sentiment
+    feature_cols = get_feature_columns(df)  # cols to feed the model
 """
 
 import pandas as pd
@@ -47,6 +48,11 @@ from features.indicators import (
     get_model_features,
     RAW_COLUMNS_TO_DROP,
     FEATURE_GROUPS,
+)
+from nlp.rolling import (
+    add_rolling_sentiment_features,   # 14  rolling/derived sentiment features
+    ALL_ROLLING_SENTIMENT_COLS,
+    ROLLING_SENTIMENT_FEATURE_GROUPS,
 )
 
 
@@ -84,6 +90,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     Step 13 (returns) runs after lags so ret_1d can itself be lagged
     in future iterations if needed.
+
+    Step 14 (rolling sentiment) runs after steps 2 and 13 so that
+    ret_1d, ret_5d (step 13) and rsi_14 (step 2) are already present
+    for cross-signal features. Requires sentiment_* columns to have
+    been joined by merger.py before build_features() is called.
+    If sentiment columns are absent, step 14 is silently skipped.
 
     Parameters
     ----------
@@ -172,6 +184,15 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # Produces: ret_1d..ret_20d, ret_mean_*, ret_std_*, max_drawdown_10d, etc.
     # Raw close is non-stationary — returns are comparable across all stocks
     df = add_return_features(df)
+
+    # ── Step 14: Rolling Sentiment Features ───────────────────────────────────
+    # Produces: sentiment_ma3/7/14, sentiment_vol_*, sentiment_trend_*,
+    #           sentiment_regime, sentiment_rsi, sentiment_streak,
+    #           article_count_spike, sent_price_confirm, sent_momentum_align, etc.
+    # Requires: sentiment_* columns already present (from merger.py)
+    #           ret_1d, ret_5d, rsi_14 already present (from steps 2 + 13)
+    # No-op with warning if sentiment_mean column is absent.
+    df = add_rolling_sentiment_features(df)
 
     # ── Final cleanup ─────────────────────────────────────────────────────────
     # Replace any inf that snuck through (div-by-zero on edge cases)
