@@ -276,7 +276,7 @@ def _financial_stats(returns: np.ndarray, name: str) -> Dict:
     trading_count = len(non_zero) if len(non_zero) > 0 else 1
 
     # Cumulative returns
-    cum_returns = (1 + returns).cumprod()
+    cum_returns = pd.Series((1 + returns).cumprod())
 
     # Sharpe Ratio
     mean_ret = np.mean(non_zero)
@@ -289,7 +289,7 @@ def _financial_stats(returns: np.ndarray, name: str) -> Dict:
     max_dd    = float(drawdowns.min())
 
     # Annualised return (compound)
-    total_return     = float(cum_returns[-1] - 1)
+    total_return     = float(cum_returns.iloc[-1] - 1)
     n_years          = len(returns) / TRADING_DAYS_PER_YEAR
     annualised_return = (1 + total_return) ** (1/n_years) - 1
 
