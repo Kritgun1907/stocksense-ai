@@ -1,0 +1,146 @@
+{
+  "model_name": "stocksense_20260404_154738",
+  "saved_at": "2026-04-04T15:47:38.778792",
+  "file": "/Users/kritgunsingh0719gmail.com/Downloads/projects /stocksense-ai/backend/models/saved/stocksense_20260404_154738.pkl",
+  "training": {
+    "tickers": [
+      "AAPL",
+      "MSFT",
+      "GOOGL",
+      "AMZN",
+      "NVDA",
+      "META",
+      "TSLA",
+      "JPM",
+      "BAC",
+      "GS",
+      "JNJ",
+      "UNH",
+      "PFE",
+      "WMT",
+      "MCD",
+      "COST",
+      "BA",
+      "CAT",
+      "HON"
+    ],
+    "period": "2y",
+    "label_config": "default",
+    "gap_days": 20,
+    "n_features": 315,
+    "stocks_used": [
+      {
+        "ticker": "AAPL",
+        "n_rows": 236,
+        "up_pct": 0.5424
+      },
+      {
+        "ticker": "MSFT",
+        "n_rows": 230,
+        "up_pct": 0.5087
+      },
+      {
+        "ticker": "GOOGL",
+        "n_rows": 257,
+        "up_pct": 0.537
+      },
+      {
+        "ticker": "AMZN",
+        "n_rows": 255,
+        "up_pct": 0.4902
+      },
+      {
+        "ticker": "NVDA",
+        "n_rows": 270,
+        "up_pct": 0.5444
+      },
+      {
+        "ticker": "META",
+        "n_rows": 261,
+        "up_pct": 0.5057
+      },
+      {
+        "ticker": "TSLA",
+        "n_rows": 268,
+        "up_pct": 0.4963
+      },
+      {
+        "ticker": "JPM",
+        "n_rows": 234,
+        "up_pct": 0.5769
+      },
+      {
+        "ticker": "BAC",
+        "n_rows": 241,
+        "up_pct": 0.5602
+      },
+      {
+        "ticker": "GS",
+        "n_rows": 251,
+        "up_pct": 0.5657
+      },
+      {
+        "ticker": "JNJ",
+        "n_rows": 221,
+        "up_pct": 0.6154
+      },
+      {
+        "ticker": "UNH",
+        "n_rows": 266,
+        "up_pct": 0.5038
+      },
+      {
+        "ticker": "PFE",
+        "n_rows": 246,
+        "up_pct": 0.5285
+      },
+      {
+        "ticker": "WMT",
+        "n_rows": 240,
+        "up_pct": 0.5458
+      },
+      {
+        "ticker": "MCD",
+        "n_rows": 224,
+        "up_pct": 0.5134
+      },
+      {
+        "ticker": "COST",
+        "n_rows": 230,
+        "up_pct": 0.4957
+      },
+      {
+        "ticker": "BA",
+        "n_rows": 250,
+        "up_pct": 0.52
+      },
+      {
+        "ticker": "CAT",
+        "n_rows": 254,
+        "up_pct": 0.5669
+      },
+      {
+        "ticker": "HON",
+        "n_rows": 240,
+        "up_pct": 0.4958
+      }
+    ]
+  },
+  "performance": {
+    "test_accuracy": 0.4912,
+    "test_auc_roc": 0.4841,
+    "majority_baseline": 0.5317,
+    "beats_baseline": false,
+    "train_accuracy": 0.7016,
+    "val_accuracy": 0.5355,
+    "scale_pos_weight": 0.8557,
+    "best_iteration": 4
+  },
+  "xgb_params": {
+    "n_estimators": 500,
+    "max_depth": 5,
+    "learning_rate": 0.05,
+    "best_iteration": 4,
+    "best_val_score": 0.6906310817614425
+  }
+}

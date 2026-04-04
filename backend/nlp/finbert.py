@@ -319,6 +319,28 @@ def load_model(
     cfg = MODEL_CONFIGS[model_name]
     model_id = cfg["model_id"]
 
+    # ── Auto-fallback for local custom model with missing weights ──────────
+    # finbert_custom points to a local directory. If that directory exists
+    # but has no model weights (only config/tokenizer), fall back to the
+    # public ProsusAI/finbert from HuggingFace automatically.
+    # This prevents a hard crash when fine-tuned weights haven't been trained yet.
+    if model_name == "finbert_custom" and os.path.isdir(model_id):
+        weight_files = [
+            "pytorch_model.bin",
+            "model.safetensors",
+            "tf_model.h5",
+            "model.ckpt.index",
+            "flax_model.msgpack",
+        ]
+        has_weights = any(
+            os.path.isfile(os.path.join(model_id, w)) for w in weight_files
+        )
+        if not has_weights:
+            print(f"⚠️  finbert_custom: no weights found in {model_id}")
+            print(f"   Falling back to ProsusAI/finbert from HuggingFace.")
+            print(f"   To use your fine-tuned model, save weights to {model_id}/")
+            model_id = "ProsusAI/finbert"  # use public model instead
+
     if _state["model_name"] is not None and _state["model_name"] != model_name:
         print(f"Switching model: {_state['model_name']} → {model_name}")
         # Clear inference cache — scores from old model are invalid
