@@ -13,22 +13,23 @@ Instead they declare a Depends() on a function here.
 FastAPI calls the function at request time and injects the result.
 
 Usage in any route file:
-    from api.deps import get_app_state, require_model
+    from api.deps import get_app_state, require_model, get_redis_client
 
     @router.get("/")
-    def my_endpoint(state: dict = Depends(get_app_state)):
-        pipeline = state["pipeline"]
-        ...
-
-    # Or use the guard directly to auto-raise 503 if model not loaded:
-    @router.get("/")
-    def my_endpoint(state: dict = Depends(require_model)):
+    async def my_endpoint(
+        state: dict = Depends(require_model),
+        redis_client = Depends(get_redis_client),
+    ):
         pipeline = state["pipeline"]    # guaranteed to be non-None
-        feature_cols = state["feature_cols"]
         ...
 """
 
+import logging
+from typing import Optional
+
 from fastapi import Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -44,8 +45,6 @@ def get_app_state() -> dict:
     Imported lazily (inside the function body) so the module-level
     circular import is completely avoided.
     """
-    # Late import — safe because main.py is fully initialised by the time
-    # any request arrives. This is the standard FastAPI pattern.
     from api.main import app_state
     return app_state
 
@@ -60,7 +59,7 @@ def require_model(state: dict = Depends(get_app_state)) -> dict:
     Example
     -------
         @router.get("/")
-        def predict(state: dict = Depends(require_model)):
+        async def predict(state: dict = Depends(require_model)):
             pipeline = state["pipeline"]
     """
     if not state.get("model_loaded"):
@@ -76,3 +75,39 @@ def require_model(state: dict = Depends(get_app_state)) -> dict:
             },
         )
     return state
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  REDIS CLIENT
+#  Returns the Redis client from app_state, or None if Redis is not available.
+#  Prediction pipeline handles None gracefully — it just skips caching.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_redis_client(state: dict = Depends(get_app_state)) -> Optional[object]:
+    """
+    Dependency: returns the async Redis client if available, else None.
+
+    Why Optional?
+    ─────────────────────────────────────────────────────────────
+    Redis is a PERFORMANCE OPTIMISATION, not a requirement.
+    If Redis is not running, the prediction endpoint still works —
+    it just computes every request from scratch instead of caching.
+    Returning None instead of raising an error keeps the server usable.
+    """
+    return state.get("redis_client", None)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DATABASE SESSION
+#  Re-exports get_db from database.py so route files only need to import
+#  from api.deps — one consistent place for all dependencies.
+# ══════════════════════════════════════════════════════════════════════════════
+
+from api.database import get_db  # noqa: F401, E402
+# Usage in any route file:
+#   from api.deps import get_db
+#   from sqlalchemy.ext.asyncio import AsyncSession
+#
+#   @router.get("/items")
+#   async def list_items(db: AsyncSession = Depends(get_db)):
+#       ...

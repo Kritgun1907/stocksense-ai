@@ -52,6 +52,7 @@ app_state = {
     "pipeline":      None,   # fitted sklearn Pipeline from trainer.py
     "feature_cols":  None,   # list of feature column names
     "model_loaded":  False,  # flag for health checks
+    "redis_client":  None,   # async Redis client (None = caching disabled)
 }
 
 
@@ -109,13 +110,55 @@ async def lifespan(app: FastAPI):
         print(f"⚠️  FinBERT unavailable (sentiment endpoints will be disabled): {e}")
         print("   /predict and /backtest endpoints are unaffected.")
 
+    # ── Redis connection — non-fatal: server works without it ──────────────
+    # If Redis is not installed or not running, predictions still work
+    # but every request recomputes from scratch (no caching).
+    # See docs/redis_guide.py for full explanation.
+    # ── PostgreSQL / database tables ───────────────────────────────────────
+    # Creates all tables defined in api/database.py if they don't exist yet.
+    # On subsequent startups it's a no-op (tables already exist).
+    # See docs/sqlalchemy_alembic_guide.py for migration workflow.
+    try:
+        from api.database import init_db
+        await init_db()
+        print("✅ Database tables ready")
+    except Exception as e:
+        print(f"⚠️  Database init failed (DB endpoints disabled): {e}")
+        print("   Is PostgreSQL running? See docs/sqlalchemy_alembic_guide.py")
+
+    try:
+        import redis.asyncio as aioredis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        redis_client = aioredis.from_url(
+            redis_url,
+            decode_responses=True,       # return strings, not bytes
+            socket_connect_timeout=2,    # fail fast if Redis not running
+        )
+        # Test connection
+        await redis_client.ping()
+        app_state["redis_client"] = redis_client
+        print(f"✅ Redis connected: {redis_url}")
+    except Exception as e:
+        print(f"⚠️  Redis unavailable (caching disabled): {e}")
+        print("   Predictions will work but won't be cached.")
+        app_state["redis_client"] = None
+
     print("✅ Server ready")
 
     yield
 
     # ── SHUTDOWN ───────────────────────────────────────────────────────────
+    # Close Redis connection gracefully
+    if app_state.get("redis_client"):
+        try:
+            await app_state["redis_client"].close()
+            print("Redis connection closed")
+        except Exception:
+            pass
+
     app_state["pipeline"]     = None
     app_state["model_loaded"] = False
+    app_state["redis_client"] = None
     print("Server shut down cleanly")
 
 

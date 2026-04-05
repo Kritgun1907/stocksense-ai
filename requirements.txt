@@ -24,3 +24,12 @@ optuna>=3.0.0         # Bayesian hyperparameter optimisation (TPE sampler)
 uvicorn>=0.34.0       # ASGI server for FastAPI
 fastapi>=0.115.0      # FastAPI web framework
 
+redis[hiredis]>=5.0.0 # Redis client with C-speed parser (async support built in)
+
+sqlalchemy>=2.0.0       # SQLAlchemy for database interactions (if needed)  
+asyncpg>=0.27.0         # asyncpg for PostgreSQL (if using Postgres instead of Redis)
+alembic>=1.7.0          # Alembic for database migrations (if using SQLAlchemy with a relational DB)
+passlib>=1.7.0          # Passlib for secure password hashing (if implementing user auth)
+bcrypt>=3.2.0           # bcrypt for password hashing (alternative to Passlib)
+python-jose>=3.0.0      # Python-JOSE for JWT token handling ( if implementing user auth)
+python-multipart>=0.0.5 # for handling file uploads in FastAPI (if needed)

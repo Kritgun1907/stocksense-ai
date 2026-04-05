@@ -1,45 +1,48 @@
 """
 StockSense AI — api/routes/predict.py
 =======================================
-GET /predict?ticker=AAPL
+Route definitions ONLY. All pipeline logic lives in api/prediction.py.
 
-This file owns:
-  - The /predict endpoint
-  - Data fetching → feature engineering → prediction → SHAP pipeline
-  - Response schema for predictions
+Routes:
+  GET /predict/              → single-stock prediction
+  GET /predict/validate      → check if ticker is valid
+  GET /predict/screener      → multi-stock screener (ranked by confidence)
 
-It does NOT own:
-  - ML model training     → models/trainer.py
-  - Feature engineering   → features/engineer.py
-  - SHAP explanation      → models/explainer.py
-  - The loaded pipeline   → main.py app_state (accessed via api/deps.py)
+Architecture note:
+─────────────────────────────────────────────────────────────
+  Route files should be THIN — 3-5 lines per endpoint.
+  They handle: query parameters, dependency injection, error mapping.
+  They do NOT: fetch data, engineer features, or run models.
+  All heavy lifting is in api/prediction.py.
+
+  Why this separation?
+  - Routes can be tested with TestClient (no real ML needed)
+  - prediction.py can be called from scheduled jobs, CLI, etc.
+  - Easier to reason about: "where does /predict live?" → routes
+                             "how does prediction work?" → prediction.py
 """
 
-import warnings
-import numpy as np
-import pandas as pd
-import yfinance as yf
-from typing import List, Optional, Dict, Any
+import logging
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-# ── Dependency injection — avoids circular import with main.py ────────────────
-# NEVER do: from api.main import app_state   ← causes circular import error
-# ALWAYS do: Depends(require_model)          ← FastAPI injects at request time
-from api.deps import require_model
+from api.deps import require_model, get_redis_client
+from api.prediction import (
+    generate_prediction,
+    validate_ticker,
+    normalise_ticker,
+    run_screener,
+)
 
-warnings.filterwarnings("ignore")
+logger = logging.getLogger(__name__)
 
-# ── Create the router for this feature area ───────────────────────────────────
-# This gets registered in main.py with prefix="/predict"
 router = APIRouter()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  RESPONSE SCHEMAS
-#  Define the exact shape of JSON this endpoint returns.
-#  These appear automatically in /docs.
 # ══════════════════════════════════════════════════════════════════════════════
 
 class FeatureExplanation(BaseModel):
@@ -54,30 +57,90 @@ class FeatureExplanation(BaseModel):
 
 class FeatureGroupImportance(BaseModel):
     """SHAP importance summed by feature category."""
-    group:      str               # "trend", "momentum", "patterns", etc.
-    importance: float             # sum of |SHAP values| for this group
+    group:      str
+    importance: float
+
+
+class MarketDataSnapshot(BaseModel):
+    """Key market metrics shown in the stock page header."""
+    current_price:    Optional[float] = None
+    price_change_pct: Optional[float] = None
+    volume:           Optional[int]   = None
+    volume_ratio:     Optional[float] = None
+    rsi:              Optional[float] = None
+    macd_signal:      Optional[str]   = None
+    bb_position:      Optional[float] = None
+    atr_pct:          Optional[float] = None
+    sentiment_score:  Optional[float] = None
+    sentiment_trend:  Optional[float] = None
+    trend_agreement:  Optional[float] = None
+    pattern_signal:   Optional[float] = None
+
+
+class DataFreshness(BaseModel):
+    """Metadata about data freshness."""
+    price_data_as_of:     Optional[str] = None
+    features_computed_at: Optional[str] = None
+    n_features_used:      Optional[int] = None
+    lookback_days:        Optional[int] = None
+
+
+class ExplanationBlock(BaseModel):
+    """SHAP explanation section of the response."""
+    summary:        str = ""
+    top_features:   List[Dict] = Field(default_factory=list)
+    feature_groups: Dict[str, float] = Field(default_factory=dict)
 
 
 class PredictionResponse(BaseModel):
     """Complete prediction response returned to the frontend."""
-    
-    # ── Identification ────────────────────────────────────────────────────
-    ticker:           str
-    prediction_date:  str         # date the features were computed for
-    
+
     # ── Core prediction ───────────────────────────────────────────────────
+    ticker:           str
     prediction:       str         # "UP" or "DOWN"
-    probability:      float       # e.g. 0.73
-    confidence_pct:   float       # e.g. 73.0 (same as probability × 100)
-    
-    # ── SHAP explanation ──────────────────────────────────────────────────
-    top_features:     List[FeatureExplanation]
-    feature_groups:   Dict[str, float]   # group_name → total SHAP
-    explanation_text: str                # full plain-English paragraph
-    
-    # ── Model metadata ────────────────────────────────────────────────────
-    n_features_used:  int
+    probability:      float
+    confidence_pct:   float
+    prediction_date:  str
+    generated_at:     str
+    horizon_days:     int = 1
     threshold_used:   float
+
+    # ── Explanation (SHAP) ────────────────────────────────────────────────
+    explanation:      ExplanationBlock = Field(default_factory=ExplanationBlock)
+
+    # ── Market snapshot ───────────────────────────────────────────────────
+    market_data:      Optional[MarketDataSnapshot] = None
+
+    # ── Data freshness ────────────────────────────────────────────────────
+    data_freshness:   Optional[DataFreshness] = None
+
+
+class ScreenerItem(BaseModel):
+    """One stock's result in the screener."""
+    ticker:        str
+    prediction:    str
+    confidence:    float
+    probability:   float
+    rsi:           Optional[float] = None
+    sentiment:     Optional[float] = None
+    price_change:  Optional[float] = None
+    current_price: Optional[float] = None
+
+
+class ScreenerResponse(BaseModel):
+    """Multi-stock screener response."""
+    screener_results: List[ScreenerItem]
+    total_screened:   int
+    signals_found:    int
+    up_signals_pct:   float
+    generated_at:     str
+    latency_ms:       float
+
+
+class TickerValidation(BaseModel):
+    """Result of ticker validation."""
+    ticker: str
+    valid:  bool
 
 
 class ErrorDetail(BaseModel):
@@ -88,125 +151,32 @@ class ErrorDetail(BaseModel):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PRIVATE HELPERS
-#  These functions do one job each. Keeping them small makes debugging easy.
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _fetch_and_prepare(ticker: str, period: str = "2y") -> pd.DataFrame:
-    """
-    Fetch OHLCV data from yfinance and run the full feature engineering pipeline.
-    
-    Returns a feature DataFrame ready for model prediction.
-    
-    Why period="2y"?
-    ────────────────────────────────────────────────────────────────
-    SMA_200 in add_trend_features() needs 200 trading days to warm up.
-    2 years gives ~500 trading days — enough for a clean feature set
-    after dropping NaN rows from rolling windows.
-    
-    Raises ValueError if data is empty or insufficient.
-    """
-    # ── Step 1: Fetch from yfinance ────────────────────────────────────────
-    raw = yf.download(
-        ticker,
-        period=period,
-        auto_adjust=True,
-        progress=False,
-    )
-    
-    if raw.empty:
-        raise ValueError(
-            f"No price data found for '{ticker}'. "
-            f"Check the ticker symbol is correct."
-        )
-    
-    # yfinance returns MultiIndex columns when auto_adjust=True
-    # Flatten them: ('Close', 'AAPL') → 'close'
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    raw.columns = [c.lower() for c in raw.columns]
-    
-    # ── Step 2: Clean the data ─────────────────────────────────────────────
-    from data.cleaner import clean_stock_data
-    clean = clean_stock_data(raw, ticker=ticker)
-    
-    if len(clean) < 250:
-        raise ValueError(
-            f"Insufficient data for '{ticker}': only {len(clean)} rows. "
-            f"Need at least 250 trading days."
-        )
-    
-    # ── Step 3: Engineer features (14-step pipeline) ────────────────────────
-    # This adds ~342 feature columns (trend, momentum, MACD, patterns, etc.)
-    from features.engineer import build_features
-    featured = build_features(clean).dropna()
-    
-    if len(featured) == 0:
-        raise ValueError(
-            f"Feature engineering produced no valid rows for '{ticker}'. "
-            f"Data may have too many gaps."
-        )
-    
-    return featured
-
-
-def _get_latest_features(
-    featured:     pd.DataFrame,
-    feature_cols: List[str],
-) -> pd.DataFrame:
-    """
-    Extract the most recent row of features for prediction.
-    
-    Why the last row?
-    ────────────────────────────────────────────────────────────────
-    The last row represents today's feature values — the latest
-    technical indicators, patterns, and momentum signals.
-    The model predicts what happens TOMORROW based on TODAY's features.
-    
-    Returns a single-row DataFrame with only the model feature columns.
-    """
-    from features.indicators import get_model_features
-    
-    # get_model_features drops raw OHLCV and non-stationary columns
-    # It also fills any remaining NaN with 0
-    X = get_model_features(featured, extra_drop=["target"]).fillna(0)
-    
-    # Keep only columns the model was trained on
-    # (the loaded pipeline expects exactly these columns in this order)
-    available_cols = [c for c in feature_cols if c in X.columns]
-    missing_cols   = [c for c in feature_cols if c not in X.columns]
-    
-    if missing_cols:
-        # Fill missing columns with 0 rather than failing
-        # This handles cases where sentiment columns are absent
-        for col in missing_cols:
-            X[col] = 0.0
-    
-    # Return only the last row, with columns in the exact training order
-    X_latest = X[feature_cols].iloc[[-1]]
-    
-    return X_latest
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  THE ENDPOINT
+#  ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.get(
     "/",
-    response_model=PredictionResponse,   # FastAPI validates the return value
+    response_model=PredictionResponse,
     summary="Predict stock direction",
     description="""
     Predicts whether a stock will go UP or DOWN tomorrow.
-    Returns the prediction with probability and SHAP-based explanation.
-    
+    Returns prediction with probability, SHAP explanation, and market data.
+
     The model generates a signal at today's CLOSE using today's features.
     The prediction applies to tomorrow's OPEN-to-CLOSE return.
+
+    Features:
+    - Live price data from yfinance
+    - Live sentiment from NewsAPI + FinBERT
+    - 315+ engineered features
+    - SHAP explanation for top contributing features
+    - Market data snapshot (RSI, MACD, BB, sentiment)
+    - Redis caching (1 hour TTL) for repeat requests
     """,
 )
-def predict_stock(
+async def predict_stock(
     ticker: str = Query(
-        ...,                              # ... = required, no default
+        ...,
         min_length=1,
         max_length=10,
         description="Stock ticker symbol (e.g. AAPL, MSFT, GOOGL)",
@@ -215,13 +185,13 @@ def predict_stock(
     period: str = Query(
         default="2y",
         description="Data period for feature engineering",
-        pattern="^[0-9]+[ymd]$",         # must match: 1y, 6mo, 90d etc.
+        pattern="^[0-9]+[ymd]$",
         example="2y",
     ),
     threshold: float = Query(
         default=0.5,
-        ge=0.1,                           # ge = greater than or equal
-        le=0.9,                           # le = less than or equal
+        ge=0.1,
+        le=0.9,
         description="Classification threshold for UP signal (0.1–0.9)",
     ),
     top_n: int = Query(
@@ -230,117 +200,101 @@ def predict_stock(
         le=20,
         description="Number of top SHAP features to include",
     ),
-    # ── Dependency injection: injects app_state, raises 503 if model not loaded
     state: dict = Depends(require_model),
+    redis_client=Depends(get_redis_client),
 ):
     """
-    Main prediction endpoint.
-    
-    Called by the React frontend when a user views a stock page.
-    The `state` parameter is injected by FastAPI via Depends(require_model).
-    It is guaranteed to contain a loaded pipeline — require_model raises 503
-    automatically if trainer.py has not been run.
+    Main prediction endpoint — thin wrapper around generate_prediction().
+
+    Everything interesting happens in api/prediction.py.
+    This function only: normalises input → calls pipeline → maps errors.
     """
-    # ── Normalise ticker ──────────────────────────────────────────────────
-    # Always work with uppercase tickers — "aapl" → "AAPL"
-    ticker = ticker.upper().strip()
-    
-    # ── Step 1: Fetch and engineer features ───────────────────────────────
+    ticker = normalise_ticker(ticker)
+
     try:
-        featured = _fetch_and_prepare(ticker, period=period)
-    except ValueError as e:
-        # Known error — bad ticker, no data, etc.
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        # Unexpected error — log and return 500
-        raise HTTPException(
-            status_code=500,
-            detail=f"Data pipeline failed for '{ticker}': {str(e)}"
-        )
-    
-    # ── Step 2: Extract latest features ──────────────────────────────────
-    # ── Step 2: Extract pipeline and feature cols from injected state ────
-    pipeline     = state["pipeline"]
-    feature_cols = state["feature_cols"]
-    
-    try:
-        X_latest = _get_latest_features(featured, feature_cols)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Feature extraction failed: {str(e)}"
-        )
-    
-    # ── Step 3: Get the prediction date ───────────────────────────────────
-    # This is the date of the last row — today's data
-    last_date = featured.index[-1]
-    if hasattr(last_date, "date"):
-        prediction_date = str(last_date.date())
-    else:
-        prediction_date = str(last_date)
-    
-    # ── Step 4: Run the model ─────────────────────────────────────────────
-    try:
-        # predict_proba returns [[P(DOWN), P(UP)]] for one sample
-        # We take index [0][1] → probability of UP for the first (only) row
-        proba_up   = float(pipeline.predict_proba(X_latest)[0][1])
-        prediction = "UP" if proba_up >= threshold else "DOWN"
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Model prediction failed: {str(e)}"
-        )
-    
-    # ── Step 5: Generate SHAP explanation ─────────────────────────────────
-    try:
-        from models.explainer import explain_single_prediction
-        
-        explanation = explain_single_prediction(
-            pipeline=pipeline,
-            X_single=X_latest,
+        result = await generate_prediction(
+            ticker=ticker,
+            pipeline=state["pipeline"],
+            feature_cols=state["feature_cols"],
+            period=period,
+            threshold=threshold,
             top_n=top_n,
-            verbose=False,
+            redis_client=redis_client,
+            include_shap=True,
         )
-        
-        # explanation dict from explainer.py contains:
-        # {
-        #   "prediction": "UP",
-        #   "probability": 0.73,
-        #   "top_features": [{"feature": ..., "shap_value": ..., ...}],
-        #   "feature_groups": {"trend": 0.12, "momentum": 0.08, ...},
-        #   "explanation_text": "Our AI model predicts..."
-        # }
-        
-        top_features = [
-            FeatureExplanation(**feat_dict)
-            for feat_dict in explanation.get("top_features", [])
-        ]
-        feature_groups = explanation.get("feature_groups", {})
-        explanation_text = explanation.get("explanation_text", "")
-        
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        # SHAP failed — return prediction without explanation
-        # This is better than failing the whole endpoint
-        top_features     = []
-        feature_groups   = {}
-        explanation_text = (
-            f"Our AI model predicts this stock will "
-            f"{'go up' if prediction == 'UP' else 'go down'} "
-            f"tomorrow with {proba_up*100:.0f}% confidence. "
-            f"(Detailed explanation unavailable: {str(e)})"
+        logger.exception(f"Unexpected error for {ticker}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed for '{ticker}': {str(e)}",
         )
-    
-    # ── Step 6: Build and return response ────────────────────────────────
-    # PredictionResponse is our Pydantic model — FastAPI validates it
-    return PredictionResponse(
-        ticker           = ticker,
-        prediction_date  = prediction_date,
-        prediction       = prediction,
-        probability      = round(proba_up, 4),
-        confidence_pct   = round(proba_up * 100, 1),
-        top_features     = top_features,
-        feature_groups   = feature_groups,
-        explanation_text = explanation_text,
-        n_features_used  = len(feature_cols),
-        threshold_used   = threshold,
-    )
+
+
+@router.get(
+    "/validate",
+    response_model=TickerValidation,
+    summary="Validate ticker symbol",
+    description="Checks if a ticker symbol is valid and has price data.",
+)
+async def validate_ticker_endpoint(
+    ticker: str = Query(..., min_length=1, max_length=10),
+):
+    """
+    Lightweight ticker check — no model required.
+    Frontend can call this to validate user input before prediction.
+    """
+    ticker = normalise_ticker(ticker)
+    valid  = await validate_ticker(ticker)
+    return TickerValidation(ticker=ticker, valid=valid)
+
+
+@router.get(
+    "/screener",
+    response_model=ScreenerResponse,
+    summary="Multi-stock screener",
+    description="""
+    Scans multiple tickers and returns UP signals ranked by confidence.
+    Default scans a curated list of 20 liquid US stocks.
+    """,
+)
+async def screener(
+    threshold: float = Query(default=0.5, ge=0.1, le=0.9),
+    top_n: int = Query(default=20, ge=1, le=100),
+    state: dict = Depends(require_model),
+    redis_client=Depends(get_redis_client),
+):
+    """
+    Multi-stock screener endpoint.
+    Runs concurrent predictions for a curated stock list.
+    """
+    # Curated list of liquid, widely-traded US stocks
+    # Expand this as needed or accept a custom list via POST body
+    default_tickers = [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+        "JPM", "V", "JNJ", "WMT", "PG", "MA", "UNH", "HD",
+        "DIS", "NFLX", "PYPL", "INTC", "AMD",
+    ]
+
+    try:
+        result = await run_screener(
+            tickers=default_tickers,
+            pipeline=state["pipeline"],
+            feature_cols=state["feature_cols"],
+            threshold=threshold,
+            redis_client=redis_client,
+            top_n=top_n,
+        )
+        return result
+
+    except Exception as e:
+        logger.exception("Screener failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Screener failed: {str(e)}",
+        )
