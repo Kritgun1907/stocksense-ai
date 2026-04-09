@@ -39,3 +39,6 @@ build/
 *.md
 *.log
 logs/
+
+
+docs/
